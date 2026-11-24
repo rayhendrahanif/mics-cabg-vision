@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>MICS-CABG VisionAR</title>
+  <style>
+    :root {
+      --ios-yellow: #FFD60A;
+      --ios-bg: #000000;
+      --ios-glass: rgba(28, 28, 30, 0.72);
+      --ios-glass-border: rgba(255, 255, 255, 0.14);
+      --ios-text: #FFFFFF;
+      --ios-muted: rgba(255, 255, 255, 0.62);
+      --danger-red: #FF453A;
+      --safe-cyan: #32ADE6;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background: var(--ios-bg);
+      color: var(--ios-text);
+      height: 100dvh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    /* Full-bleed Viewfinder */
+    .viewfinder {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0a0a0c;
+    }
+
+    video#webcam {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    canvas#arCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: auto;
+    }
+
+    /* Subtle iOS Camera Grid */
+    .grid-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(to right, rgba(255,255,255,0.06) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px);
+      background-size: 33.333% 33.333%;
+    }
+
+    /* Top Control Bar */
+    .top-bar {
+      position: absolute;
+      top: env(safe-area-inset-top, 14px);
+      left: 0;
+      right: 0;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 20;
+      pointer-events: none;
+    }
+
+    .top-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: auto;
+    }
+
+    .glass-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid var(--ios-glass-border);
+      background: var(--ios-glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.2s ease, color 0.2s ease;
+    }
+
+    .glass-btn:active {
+      transform: scale(0.92);
+    }
+
+    .glass-btn.active {
+      background: rgba(255, 214, 10, 0.22);
+      border-color: var(--ios-yellow);
+      color: var(--ios-yellow);
+    }
+
+    .pill-btn {
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid var(--ios-glass-border);
+      background: var(--ios-glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+
+    .pill-btn.demo-active {
+      border-color: var(--ios-yellow);
+      color: var(--ios-yellow);
+    }
+
+    /* Dynamic Island Pill */
+    .dynamic-island {
+      pointer-events: auto;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 999px;
+      padding: 7px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      max-width: 62vw;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #8e8e93;
+      flex-shrink: 0;
+      transition: background 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    .status-dot.locked {
+      background: var(--ios-yellow);
+      box-shadow: 0 0 10px var(--ios-yellow);
+    }
+
+    .island-text {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .island-text span.highlight {
+      color: var(--ios-yellow);
+    }
+
+    /* Bottom iOS Camera Deck */
+    .bottom-deck {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 10px 16px calc(env(safe-area-inset-bottom, 16px) + 12px);
+      background: linear-gradient(to top, rgba(0,0,0,0.92) 65%, rgba(0,0,0,0));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      z-index: 20;
+    }
+
+    /* Zoom-style BMI Selector */
+    .bmi-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(28, 28, 30, 0.68);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      padding: 4px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .bmi-chip {
+      border: none;
+      background: transparent;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .bmi-chip.active {
+      background: rgba(255, 255, 255, 0.18);
+      color: var(--ios-yellow);
+      transform: scale(1.04);
+    }
+
+    /* Mode Dial (Graft Target) */
+    .mode-dial {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      width: 100%;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding: 2px 0;
+    }
+
+    .mode-dial::-webkit-scrollbar {
+      display: none;
+    }
+
+    .mode-item {
+      background: none;
+      border: none;
+      color: var(--ios-muted);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color 0.2s ease, transform 0.2s ease;
+    }
+
+    .mode-item.active {
+      color: var(--ios-yellow);
+      transform: scale(1.05);
+    }
+
+    /* Shutter Row */
+    .shutter-row {
+      width: 100%;
+      max-width: 380px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+    }
+
+    .thumb-preview {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      border: 1.5px solid rgba(255,255,255,0.28);
+      background: rgba(255,255,255,0.08);
+      overflow: hidden;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: var(--ios-muted);
+    }
+
+    .thumb-preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .shutter-btn {
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      border: 3.5px solid #fff;
+      background: transparent;
+      padding: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.12s ease;
+    }
+
+    .shutter-btn:active {
+      transform: scale(0.92);
+    }
+
+    .shutter-inner {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: #fff;
+      transition: background 0.15s ease;
+    }
+
+    .shutter-btn:active .shutter-inner {
+      background: #d1d1d6;
+    }
+
+    /* Flash effect */
+    .flash-fx {
+      position: fixed;
+      inset: 0;
+      background: #fff;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 99;
+      transition: opacity 0.25s ease;
+    }
+
+    /* Bottom Sheet for Extra Clinical Options */
+    .sheet-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+      z-index: 40;
+    }
+
+    .sheet-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .bottom-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #1c1c1e;
+      border-top-left-radius: 22px;
+      border-top-right-radius: 22px;
+      padding: 12px 20px 28px;
+      transform: translateY(105%);
+      transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+      z-index: 50;
+      border-top: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .bottom-sheet.open {
+      transform: translateY(0);
+    }
+
+    .sheet-handle {
+      width: 36px;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.28);
+      margin: 0 auto 14px;
+    }
+
+    .sheet-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: #fff;
+    }
+
+    .sheet-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      font-size: 13px;
+    }
+
+    .segmented {
+      display: flex;
+      background: #2c2c2e;
+      border-radius: 8px;
+      padding: 2px;
+    }
+
+    .seg-btn {
+      border: none;
+      background: transparent;
+      color: #aeaeb2;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .seg-btn.active {
+      background: #48484a;
+      color: #fff;
+    }
+
+    .disclaimer-note {
+      margin-top: 12px;
+      font-size: 11px;
+      line-height: 1.45;
+      color: #8e8e93;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="flash-fx" id="flashFx"></div>
+
+  <div class="viewfinder" id="viewfinder">
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="arCanvas"></canvas>
+    <div class="grid-overlay"></div>
+
+    <!-- Top iOS Camera Bar -->
+    <div class="top-bar">
+      <div class="top-group">
+        <button class="glass-btn active" id="btnAnatomy" title="Tampilkan Anatomi Jantung & LIMA">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+          </svg>
+        </button>
+        <button class="glass-btn active" id="btnSternotomy" title="Bandingkan dengan Sternotomi">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="3" x2="12" y2="21" stroke-dasharray="3 3"/>
+            <line x1="6" y1="13" x2="11" y2="14"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="dynamic-island" id="dynamicIsland">
+        <div class="status-dot" id="statusDot"></div>
+        <div class="island-text" id="islandText">HOVER TANGAN DI DADA</div>
+      </div>
+
+      <button class="pill-btn" id="btnModeToggle">DEMO</button>
+    </div>
+
+    <!-- Bottom iOS Camera Controls -->
+    <div class="bottom-deck">
+      <!-- Zoom-style BMI Chips -->
+      <div class="bmi-bar" id="bmiBar">
+        <button class="bmi-chip active" data-bmi="normal">BMI &lt;25</button>
+        <button class="bmi-chip" data-bmi="over">BMI 25–30</button>
+        <button class="bmi-chip" data-bmi="obese">BMI &gt;30</button>
+      </div>
+
+      <!-- Mode Dial for Target Graft -->
+      <div class="mode-dial" id="modeDial">
+        <button class="mode-item active" data-graft="1">1 GRAFT (LIMA-LAD)</button>
+        <button class="mode-item" data-graft="2">2 GRAFTS</button>
+        <button class="mode-item" data-graft="3">MULTIVESSEL</button>
+      </div>
+
+      <!-- Shutter Row -->
+      <div class="shutter-row">
+        <div class="thumb-preview" id="thumbPreview" title="Unduh Tangkapan Terakhir">
+          <span>FOTO</span>
+        </div>
+
+        <button class="shutter-btn" id="btnShutter" title="Ambil Foto Edukasi Pasien">
+          <div class="shutter-inner"></div>
+        </button>
+
+        <button class="glass-btn" id="btnSettings" title="Opsi Anatomi">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
+            <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
+            <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Minimal Bottom Sheet -->
+  <div class="sheet-backdrop" id="sheetBackdrop"></div>
+  <div class="bottom-sheet" id="bottomSheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Parameter Edukasi MICS CABG</div>
+    <div class="sheet-row">
+      <span>Kontur Sayatan</span>
+      <div class="segmented" id="contourSeg">
+        <button class="seg-btn active" data-contour="anterior">Anterior</button>
+        <button class="seg-btn" data-contour="submammary">Submammary</button>
+      </div>
+    </div>
+    <div class="sheet-row">
+      <span>Paksa Kunci Overlay</span>
+      <div class="segmented" id="lockSeg">
+        <button class="seg-btn active" data-lock="hover">Hover Tangan</button>
+        <button class="seg-btn" data-lock="always">Selalu Aktif</button>
+      </div>
+    </div>
+    <p class="disclaimer-note">
+      <strong>Catatan Medis:</strong> Visualisasi AR ini merupakan simulasi edukasi pasien. Lokasi sela iga (ICS) dan panjang sayatan definitif ditentukan dokter bedah toraks kardiovaskular berdasarkan Rontgen Toraks/CT Scan dan anatomi intraoperatif.
+    </p>
+  </div>
+
+  <!-- MediaPipe Tasks Vision CDN -->
+  <script type="module">
+    import {
+      FilesetResolver,
+      PoseLandmarker,
+      HandLandmarker
+    } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+    const video = document.getElementById("webcam");
+    const canvas = document.getElementById("arCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const statusDot = document.getElementById("statusDot");
+    const islandText = document.getElementById("islandText");
+    const btnModeToggle = document.getElementById("btnModeToggle");
+    const btnAnatomy = document.getElementById("btnAnatomy");
+    const btnSternotomy = document.getElementById("btnSternotomy");
+    const btnShutter = document.getElementById("btnShutter");
+    const thumbPreview = document.getElementById("thumbPreview");
+    const flashFx = document.getElementById("flashFx");
+
+    const state = {
+      grafts: 1,
+      bmi: "normal",
+      contour: "anterior",
+      lockMode: "hover",
+      showAnatomy: true,
+      showSternotomy: true,
+      demoMode: false,
+      hoverDetected: false,
+      demoPointer: { x: 0.5, y: 0.48, active: false },
+      lastCaptureUrl: null
+    };
+
+    let poseLandmarker = null;
+    let handLandmarker = null;
+    let lastVideoTime = -1;
+
+    function computePrediction() {
+      let baseLength = 5.5;
+      let ics = "ICS 4";
+      if (state.grafts === 2) {
+        baseLength = 7.0;
+        ics = "ICS 4–5";
+      } else if (state.grafts === 3) {
+        baseLength = 8.5;
+        ics = "ICS 5";
+      }
+
+      if (state.bmi === "over") baseLength += 1.0;
+      if (state.bmi === "obese") baseLength += 2.0;
+
+      const sternotomyCm = 22.0;
+      const reduction = Math.round((1 - baseLength / sternotomyCm) * 100);
+      return {
+        ics,
+        lengthCm: baseLength.toFixed(1),
+        sternotomyCm: sternotomyCm.toFixed(0),
+        reduction
+      };
+    }
+
+    function updateDynamicIsland(isActive) {
+      const pred = computePrediction();
+      if (isActive) {
+        statusDot.classList.add("locked");
+        islandText.innerHTML = `<span class="highlight">${pred.ics}</span> • ± ${pred.lengthCm} CM (-${pred.reduction}%)`;
+      } else {
+        statusDot.classList.remove("locked");
+        islandText.textContent = state.demoMode
+          ? "ARAHKAN KURSOR/JARI KE DADA"
+          : "HOVER TANGAN DI AREA DADA";
+      }
+    }
+
+    function resizeCanvas() {
+      canvas.width = canvas.clientWidth * window.devicePixelRatio;
+      canvas.height = canvas.clientHeight * window.devicePixelRatio;
+      ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+    // UI Event Listeners
+    document.querySelectorAll(".bmi-chip").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".bmi-chip").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        state.bmi = btn.dataset.bmi;
+      });
+    });
+
+    document.querySelectorAll(".mode-item").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".mode-item").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        state.grafts = parseInt(btn.dataset.graft, 10);
+      });
+    });
+
+    btnAnatomy.addEventListener("click", () => {
+      state.showAnatomy = !state.showAnatomy;
+      btnAnatomy.classList.toggle("active", state.showAnatomy);
+    });
+
+    btnSternotomy.addEventListener("click", () => {
+      state.showSternotomy = !state.showSternotomy;
+      btnSternotomy.classList.toggle("active", state.showSternotomy);
+    });
+
+    // Bottom sheet controls
+    const sheetBackdrop = document.getElementById("sheetBackdrop");
+    const bottomSheet = document.getElementById("bottomSheet");
+    document.getElementById("btnSettings").addEventListener("click", () => {
+      sheetBackdrop.classList.add("open");
+      bottomSheet.classList.add("open");
+    });
+    sheetBackdrop.addEventListener("click", () => {
+      sheetBackdrop.classList.remove("open");
+      bottomSheet.classList.remove("open");
+    });
+
+    document.querySelectorAll("#contourSeg .seg-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#contourSeg .seg-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        state.contour = btn.dataset.contour;
+      });
+    });
+
+    document.querySelectorAll("#lockSeg .seg-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#lockSeg .seg-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        state.lockMode = btn.dataset.lock;
+      });
+    });
+
+    // Demo Mode toggle
+    btnModeToggle.addEventListener("click", () => {
+      state.demoMode = !state.demoMode;
+      btnModeToggle.textContent = state.demoMode ? "KAMERA" : "DEMO";
+      btnModeToggle.classList.toggle("demo-active", state.demoMode);
+      if (!state.demoMode && !video.srcObject) {
+        initCamera();
+      }
+    });
+
+    // Pointer tracking for Demo Mode
+    canvas.addEventListener("pointermove", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      state.demoPointer.x = (e.clientX - rect.left) / rect.width;
+      state.demoPointer.y = (e.clientY - rect.top) / rect.height;
+      state.demoPointer.active = true;
+    });
+
+    canvas.addEventListener("pointerdown", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      state.demoPointer.x = (e.clientX - rect.left) / rect.width;
+      state.demoPointer.y = (e.clientY - rect.top) / rect.height;
+      state.demoPointer.active = true;
+    });
+
+    // Shutter Capture
+    btnShutter.addEventListener("click", () => {
+      flashFx.style.opacity = "0.85";
+      setTimeout(() => { flashFx.style.opacity = "0"; }, 140);
+
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = canvas.width;
+      exportCanvas.height = canvas.height;
+      const ectx = exportCanvas.getContext("2d");
+
+      if (!state.demoMode && video.readyState >= 2) {
+        ectx.save();
+        ectx.translate(exportCanvas.width, 0);
+        ectx.scale(-1, 1);
+        ectx.drawImage(video, 0, 0, exportCanvas.width, exportCanvas.height);
+        ectx.restore();
+      } else {
+        ectx.fillStyle = "#111318";
+        ectx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+      }
+
+      ectx.drawImage(canvas, 0, 0);
+
+      // Stamp clinical summary card at bottom of photo
+      const pred = computePrediction();
+      const pad = 24 * window.devicePixelRatio;
+      const boxH = 74 * window.devicePixelRatio;
+      ectx.fillStyle = "rgba(0,0,0,0.78)";
+      ectx.fillRect(pad, exportCanvas.height - boxH - pad, exportCanvas.width - pad * 2, boxH);
+      ectx.fillStyle = "#FFD60A";
+      ectx.font = `bold ${16 * window.devicePixelRatio}px -apple-system, sans-serif`;
+      ectx.fillText(`MICS-CABG VisionAR • ${pred.ics} | Sayatan ± ${pred.lengthCm} cm (-${pred.reduction}% vs Sternotomi)`, pad + 18, exportCanvas.height - boxH - pad + 30 * window.devicePixelRatio);
+      ectx.fillStyle = "#E5E5EA";
+      ectx.font = `${12 * window.devicePixelRatio}px -apple-system, sans-serif`;
+      ectx.fillText(`Target: ${state.grafts} Graft | Kategori BMI: ${state.bmi.toUpperCase()} | Simulasi Edukasi Pasien`, pad + 18, exportCanvas.height - boxH - pad + 54 * window.devicePixelRatio);
+
+      const url = exportCanvas.toDataURL("image/png");
+      state.lastCaptureUrl = url;
+      thumbPreview.innerHTML = `<img src="${url}" alt="Capture"/>`;
+
+      const link = document.createElement("a");
+      link.download = `MICS-CABG-Edukasi-${pred.ics.replace(/\s+/g, "")}.png`;
+      link.href = url;
+      link.click();
+    });
+
+    thumbPreview.addEventListener("click", () => {
+      if (state.lastCaptureUrl) {
+        const link = document.createElement("a");
+        link.download = "MICS-CABG-Edukasi.png";
+        link.href = state.lastCaptureUrl;
+        link.click();
+      }
+    });
+
+    function drawDemoSilhouette(w, h) {
+      ctx.save();
+      const cx = w * 0.5;
+      const topY = h * 0.22;
+      const shoulderW = Math.min(w * 0.62, 340);
+
+      // Dark studio gradient
+      const grad = ctx.createRadialGradient(cx, h * 0.45, 30, cx, h * 0.45, Math.max(w, h) * 0.7);
+      grad.addColorStop(0, "#1c222d");
+      grad.addColorStop(1, "#090a0d");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      // Torso outline
+      ctx.strokeStyle = "rgba(255,255,255,0.18)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - shoulderW * 0.5, topY + 35);
+      ctx.quadraticCurveTo(cx, topY - 10, cx + shoulderW * 0.5, topY + 35);
+      ctx.lineTo(cx + shoulderW * 0.4, h * 0.75);
+      ctx.lineTo(cx - shoulderW * 0.4, h * 0.75);
+      ctx.closePath();
+      ctx.stroke();
+
+      // Clavicle & rib guides
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      ctx.lineWidth = 1.2;
+      for (let i = 1; i <= 5; i++) {
+        const ry = topY + 55 + i * 26;
+        ctx.beginPath();
+        ctx.moveTo(cx - shoulderW * 0.34, ry);
+        ctx.quadraticCurveTo(cx, ry + 14, cx + shoulderW * 0.34, ry);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      return {
+        leftShoulder: { x: cx + shoulderW * 0.45, y: topY + 38 },
+        rightShoulder: { x: cx - shoulderW * 0.45, y: topY + 38 },
+        leftHip: { x: cx + shoulderW * 0.32, y: h * 0.72 },
+        rightHip: { x: cx - shoulderW * 0.32, y: h * 0.72 }
+      };
+    }
+
+    function drawThoraxAR(thorax, fingerPt) {
+      const { leftShoulder, rightShoulder, leftHip, rightHip } = thorax;
+      // Note: On mirrored camera, anatomical LEFT chest of patient facing camera is on viewer's RIGHT side
+      const midShoulderX = (leftShoulder.x + rightShoulder.x) / 2;
+      const midShoulderY = (leftShoulder.y + rightShoulder.y) / 2;
+      const midHipX = (leftHip.x + rightHip.x) / 2;
+      const midHipY = (leftHip.y + rightHip.y) / 2;
+
+      const shoulderWidth = Math.hypot(leftShoulder.x - rightShoulder.x, leftShoulder.y - rightShoulder.y);
+      const torsoHeight = Math.hypot(midHipX - midShoulderX, midHipY - midShoulderY);
+      const angle = Math.atan2(leftShoulder.y - rightShoulder.y, leftShoulder.x - rightShoulder.x);
+
+      // Thorax ROI box
+      const boxW = shoulderWidth * 0.92;
+      const boxH = torsoHeight * 0.62;
+      const centerX = midShoulderX + (midHipX - midShoulderX) * 0.34;
+      const centerY = midShoulderY + (midHipY - midShoulderY) * 0.34;
+
+      let isHovering = false;
+      if (fingerPt) {
+        const dx = Math.abs(fingerPt.x - centerX);
+        const dy = Math.abs(fingerPt.y - centerY);
+        isHovering = dx < boxW * 0.58 && dy < boxH * 0.62;
+      }
+
+      const active = state.lockMode === "always" || isHovering;
+      updateDynamicIsland(active);
+
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(angle);
+
+      // Subtle iOS Focus Reticle on Thorax
+      const bracketSize = 16;
+      ctx.strokeStyle = active ? "rgba(255, 214, 10, 0.85)" : "rgba(255, 255, 255, 0.32)";
+      ctx.lineWidth = active ? 2 : 1.3;
+      const hw = boxW * 0.46;
+      const hh = boxH * 0.48;
+
+      // 4 corner brackets
+      [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sy]) => {
+        ctx.beginPath();
+        ctx.moveTo(sx * hw, sy * (hh - bracketSize));
+        ctx.lineTo(sx * hw, sy * hh);
+        ctx.lineTo(sx * (hw - bracketSize), sy * hh);
+        ctx.stroke();
+      });
+
+      if (active) {
+        const pred = computePrediction();
+        // Anatomical left chest offset (+x in viewer coordinates when mirrored)
+        const leftChestDir = leftShoulder.x >= rightShoulder.x ? 1 : -1;
+
+        // 1. Optional Heart & LIMA-LAD Graft Overlay
+        if (state.showAnatomy) {
+          ctx.save();
+          ctx.translate(leftChestDir * shoulderWidth * 0.08, -boxH * 0.04);
+
+          // Stylized Heart Silhouette
+          ctx.fillStyle = "rgba(255, 59, 48, 0.22)";
+          ctx.strokeStyle = "rgba(255, 69, 58, 0.72)";
+          ctx.lineWidth = 1.8;
+          ctx.beginPath();
+          ctx.ellipse(leftChestDir * 8, 8, shoulderWidth * 0.13, boxH * 0.24, leftChestDir * 0.28, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          // LIMA -> LAD Bypass Graft highlight
+          ctx.strokeStyle = "#32ADE6";
+          ctx.lineWidth = 2.6;
+          ctx.beginPath();
+          ctx.moveTo(leftChestDir * shoulderWidth * 0.04, -boxH * 0.34);
+          ctx.quadraticCurveTo(
+            leftChestDir * shoulderWidth * 0.12,
+            -boxH * 0.08,
+            leftChestDir * shoulderWidth * 0.14,
+            boxH * 0.14
+          );
+          ctx.stroke();
+
+          ctx.fillStyle = "#32ADE6";
+          ctx.font = "600 10px -apple-system, sans-serif";
+          ctx.fillText("LIMA-LAD", leftChestDir * shoulderWidth * 0.15, -boxH * 0.14);
+          ctx.restore();
+        }
+
+        // 2. Optional Median Sternotomy Comparison Line (~22 cm)
+        if (state.showSternotomy) {
+          const sternLen = boxH * 0.72;
+          ctx.save();
+          ctx.strokeStyle = "rgba(255, 69, 58, 0.65)";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([5, 5]);
+          ctx.beginPath();
+          ctx.moveTo(0, -sternLen * 0.45);
+          ctx.lineTo(0, sternLen * 0.55);
+          ctx.stroke();
+
+          ctx.setLineDash([]);
+          ctx.fillStyle = "rgba(255, 69, 58, 0.9)";
+          ctx.font = "600 10px -apple-system, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(`Sternotomi ~${pred.sternotomyCm} cm`, 0, -sternLen * 0.5);
+          ctx.restore();
+        }
+
+        // 3. Predicted MICS Mini-Thoracotomy Incision Line
+        const cmToPx = (shoulderWidth * 0.68) / 36.0; // approx 36 cm biacromial reference
+        const incisionPx = Math.max(36, parseFloat(pred.lengthCm) * cmToPx);
+        const incCenterX = leftChestDir * shoulderWidth * 0.18;
+        const incCenterY = state.contour === "submammary" ? boxH * 0.12 : boxH * 0.02;
+
+        ctx.save();
+        ctx.translate(incCenterX, incCenterY);
+
+        // Glow behind incision
+        ctx.shadowColor = "#FFD60A";
+        ctx.shadowBlur = 14;
+        ctx.strokeStyle = "#FFD60A";
+        ctx.lineWidth = 4;
+        ctx.lineCap = "round";
+
+        ctx.beginPath();
+        if (state.contour === "submammary") {
+          ctx.moveTo(-incisionPx * 0.5, -3);
+          ctx.quadraticCurveTo(0, 8, incisionPx * 0.5, -2);
+        } else {
+          ctx.moveTo(-incisionPx * 0.5, -leftChestDir * 4);
+          ctx.lineTo(incisionPx * 0.5, leftChestDir * 4);
+        }
+        ctx.stroke();
+
+        // Callout Pill Label
+        ctx.shadowBlur = 0;
+        const label = `${pred.ics} • ± ${pred.lengthCm} cm`;
+        ctx.font = "700 11px -apple-system, sans-serif";
+        const tw = ctx.measureText(label).width + 16;
+        const pillY = 16;
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.84)";
+        ctx.beginPath();
+        ctx.roundRect(-tw / 2, pillY, tw, 22, 11);
+        ctx.fill();
+        ctx.strokeStyle = "#FFD60A";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = "#FFD60A";
+        ctx.textAlign = "center";
+        ctx.fillText(label, 0, pillY + 15);
+        ctx.restore();
+      }
+
+      ctx.restore();
+
+      // Draw Finger / Pointer Indicator
+      if (fingerPt) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(fingerPt.x, fingerPt.y, 10, 0, Math.PI * 2);
+        ctx.strokeStyle = isHovering ? "#FFD60A" : "rgba(255,255,255,0.7)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(fingerPt.x, fingerPt.y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = isHovering ? "#FFD60A" : "#fff";
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    async function initMediaPipe() {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+        );
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numPoses: 1
+        });
+        handLandmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numHands: 2
+        });
+      } catch (err) {
+        console.warn("MediaPipe fallback to demo mode:", err);
+        enableDemoFallback();
+      }
+    }
+
+    function enableDemoFallback() {
+      state.demoMode = true;
+      btnModeToggle.textContent = "KAMERA";
+      btnModeToggle.classList.add("demo-active");
+    }
+
+    async function initCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+      } catch (err) {
+        console.warn("Kamera tidak tersedia, beralih ke Mode Demo:", err);
+        enableDemoFallback();
+      }
+    }
+
+    function renderLoop() {
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      ctx.clearRect(0, 0, w, h);
+
+      if (state.demoMode || !video.srcObject || video.readyState < 2) {
+        const demoThorax = drawDemoSilhouette(w, h);
+        const ptr = state.demoPointer.active
+          ? { x: state.demoPointer.x * w, y: state.demoPointer.y * h }
+          : null;
+        drawThoraxAR(demoThorax, ptr);
+      } else if (poseLandmarker && handLandmarker) {
+        const now = performance.now();
+        if (video.currentTime !== lastVideoTime) {
+          lastVideoTime = video.currentTime;
+          const poseRes = poseLandmarker.detectForVideo(video, now);
+          const handRes = handLandmarker.detectForVideo(video, now);
+
+          if (poseRes.landmarks && poseRes.landmarks.length > 0) {
+            const lm = poseRes.landmarks[0];
+            // Mirror X coordinate to match mirrored selfie webcam
+            const mapPt = (p) => ({ x: (1 - p.x) * w, y: p.y * h });
+            const thorax = {
+              leftShoulder: mapPt(lm[11]),
+              rightShoulder: mapPt(lm[12]),
+              leftHip: mapPt(lm[23]),
+              rightHip: mapPt(lm[24])
+            };
+
+            let fingerPt = null;
+            if (handRes.landmarks && handRes.landmarks.length > 0) {
+              // Index fingertip (8) or middle MCP (9)
+              const tip = handRes.landmarks[0][8];
+              fingerPt = { x: (1 - tip.x) * w, y: tip.y * h };
+            }
+
+            drawThoraxAR(thorax, fingerPt);
+          } else {
+            updateDynamicIsland(false);
+          }
+        }
+      }
+
+      requestAnimationFrame(renderLoop);
+    }
+
+    (async () => {
+      await initMediaPipe();
+      await initCamera();
+      renderLoop();
+    })();
+  </script>
+</body>
+</html>
